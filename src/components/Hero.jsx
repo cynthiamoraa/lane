@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { askLaneAI } from "../laneAI.js";
-import { apiPost, ApiError } from "../api.js";
+import { apiPost, ApiError, isOffline } from "../api.js";
 import { availabilityOf, byPrice } from "../availability.js";
 import { useSiteData } from "../SiteDataContext.jsx";
 import ProductCard from "./ProductCard.jsx";
@@ -38,7 +38,7 @@ function splitHeading(text = "") {
 }
 
 export default function Hero({ pendingQuery }) {
-  const { site, featured, loading } = useSiteData();
+  const { site, featured, loading, backendStatus, wake, reportBackendDown } = useSiteData();
   const heading = splitHeading(site.heroHeading);
   const [messages, setMessages] = useState([]); // [{ role: "user" | "assistant", content, count?, offline?, skip? }]
   const [input, setInput] = useState("");
@@ -76,6 +76,14 @@ export default function Hero({ pendingQuery }) {
     }
   }
 
+  // Answer with the local matcher (backend asleep, waking or unreachable).
+  function answerLocally(q, { offline }) {
+    const { reply, products } = askLaneAI(q);
+    setMessages((m) => [...m, { role: "assistant", content: reply, count: products.length, offline }]);
+    showProducts(products, null);
+    setSuggestions([]);
+  }
+
   async function send(text) {
     const q = text.trim();
     if (!q || typing) return;
@@ -86,6 +94,17 @@ export default function Hero({ pendingQuery }) {
     setMessages(conversation);
     setInput("");
     setTyping(true);
+
+    // Backend still starting up (or gave up waking): don't make the customer wait.
+    // The "starting up" notice explains this; once it's ready we switch to the live API.
+    if (backendStatus !== "ready") {
+      if (backendStatus === "offline") wake(); // try waking it again in the background
+      await new Promise((r) => setTimeout(r, 500));
+      if (myId !== conversationId.current) return;
+      answerLocally(q, { offline: backendStatus === "offline" });
+      setTyping(false);
+      return;
+    }
 
     try {
       const res = await apiPost("/ai/chat", { messages: toApiHistory(conversation) });
@@ -104,11 +123,10 @@ export default function Hero({ pendingQuery }) {
           { role: "assistant", content: err.message, skip: true },
         ]);
       } else {
-        // API down or timed out: answer with the local matcher.
-        const { reply, products } = askLaneAI(q);
-        setMessages((m) => [...m, { role: "assistant", content: reply, count: products.length, offline: true }]);
-        showProducts(products, null);
-        setSuggestions([]);
+        // API down or timed out: answer with the local matcher, and check whether
+        // the backend has gone back to sleep.
+        if (isOffline(err)) reportBackendDown();
+        answerLocally(q, { offline: true });
       }
     } finally {
       if (myId === conversationId.current) setTyping(false);
@@ -203,6 +221,13 @@ export default function Hero({ pendingQuery }) {
                 Start fresh
               </button>
             </div>
+
+            {backendStatus === "waking" && (
+              <p role="status" className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-800">
+                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-500" />
+                Lane AI is starting up, this can take up to a minute. Basic matches are shown meanwhile.
+              </p>
+            )}
 
             <div ref={chatRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
               {[welcome, ...messages].map((m, i) => (

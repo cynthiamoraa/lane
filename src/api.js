@@ -2,6 +2,9 @@
 
 const BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 const TIMEOUT_MS = 10_000;
+// Orders and partner requests may hit a backend that is still waking up
+// (Render free plan: ~1 minute), so they wait longer before giving up.
+export const SLOW_TIMEOUT_MS = 60_000;
 
 export class ApiError extends Error {
   constructor(message, { status = 0, errors = null } = {}) {
@@ -16,9 +19,9 @@ export class ApiError extends Error {
 // i.e. when the site should fall back to local data / WhatsApp.
 export const isOffline = (err) => !(err instanceof ApiError) || err.status === 0 || err.status >= 500;
 
-async function request(method, path, body) {
+async function request(method, path, body, { timeoutMs = TIMEOUT_MS } = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let res;
   try {
@@ -62,8 +65,24 @@ async function request(method, path, body) {
   throw new ApiError(data?.error || data?.message || "Something went wrong. Please try again.", { status: res.status });
 }
 
-export const apiGet = (path) => request("GET", path);
-export const apiPost = (path, body) => request("POST", path, body ?? {});
+export const apiGet = (path, opts) => request("GET", path, undefined, opts);
+export const apiPost = (path, body, opts) => request("POST", path, body ?? {}, opts);
+
+// GET /api/health (outside /api/v1). Resolves true when the backend and its database are up.
+export async function checkHealth(timeoutMs = 8_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${BASE_URL}/api/health`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    return data?.status === "ok";
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // Flattens a 422 error value (string, list, or nested object such as
 // items: [{ webProduct: { sourceUrl: ["is invalid"] } }]) into readable text.

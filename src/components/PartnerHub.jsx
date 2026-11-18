@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { partnerProfiles } from "../data/site.js";
 import { useSiteData } from "../SiteDataContext.jsx";
-import { apiPost, ApiError, isOffline } from "../api.js";
+import { apiPost, ApiError, isOffline, SLOW_TIMEOUT_MS } from "../api.js";
+import useSlowRequest from "../useSlowRequest.js";
 
 // Tab ids → API profile values.
 const apiProfile = { fleet: "fleet", garages: "garage", influencers: "influencer" };
 
 export default function PartnerHub() {
-  const { waLink } = useSiteData();
+  const { waLink, reportBackendDown } = useSiteData();
   const [active, setActive] = useState(partnerProfiles[0].id);
   const [values, setValues] = useState({});
   const [website, setWebsite] = useState(""); // honeypot
   const [submitting, setSubmitting] = useState(false);
+  const slow = useSlowRequest(submitting);
   const [errors, setErrors] = useState({}); // { [field label]: message }
   const [formError, setFormError] = useState("");
   const [success, setSuccess] = useState(null); // { whatsappUrl }
@@ -40,7 +42,11 @@ export default function PartnerHub() {
     const fields = Object.fromEntries(profile.fields.map((f) => [f, (values[`${active}-${f}`] || "").trim()]));
 
     try {
-      const res = await apiPost("/partner-requests", { profile: apiProfile[active], fields, website });
+      const res = await apiPost(
+        "/partner-requests",
+        { profile: apiProfile[active], fields, website },
+        { timeoutMs: SLOW_TIMEOUT_MS } // the backend may still be waking up
+      );
       setSuccess({ whatsappUrl: res?.whatsappUrl });
       setValues((v) => Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith(`${active}-`))));
     } catch (err) {
@@ -64,6 +70,7 @@ export default function PartnerHub() {
         setErrors(fieldErrors);
         setFormError(other.join(" ") || (Object.keys(fieldErrors).length ? "" : err.message));
       } else if (isOffline(err)) {
+        reportBackendDown();
         openWhatsAppDirect();
       } else {
         setFormError(err.message);
@@ -169,7 +176,7 @@ export default function PartnerHub() {
                 disabled={submitting}
                 className="w-full rounded-full bg-brand-600 px-6 py-3 font-semibold text-white transition hover:bg-brand-500 disabled:opacity-60"
               >
-                {submitting ? "Sending…" : "Submit Partner Request"}
+                {submitting ? (slow ? "Sending your request… this can take a moment" : "Sending…") : "Submit Partner Request"}
               </button>
             </form>
           )}

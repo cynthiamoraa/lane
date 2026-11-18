@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useCart } from "../CartContext.jsx";
 import { useSiteData } from "../SiteDataContext.jsx";
-import { apiGet, apiPost, ApiError, errorText, isOffline } from "../api.js";
+import { apiGet, apiPost, ApiError, errorText, isOffline, SLOW_TIMEOUT_MS } from "../api.js";
+import useSlowRequest from "../useSlowRequest.js";
 import { CONFIRM_NOTE } from "../availability.js";
 import AvailabilityBadge from "./AvailabilityBadge.jsx";
 import { formatKES } from "../data/site.js";
@@ -84,22 +85,39 @@ function CartTotal({ total, unconfirmed }) {
 
 export default function CartDrawer() {
   const { items, setQty, clear, total, unconfirmedCount, open, setOpen } = useCart();
-  const { waLink } = useSiteData();
+  const { waLink, backendStatus, reportBackendDown } = useSiteData();
   const [stage, setStage] = useState("cart"); // "cart" | "details" | "done"
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const slow = useSlowRequest(submitting);
   const [centres, setCentres] = useState(null); // null = not loaded yet
+  const [centresFailed, setCentresFailed] = useState(false);
   const [order, setOrder] = useState(null); // { reference, total, whatsappUrl, unconfirmed }
 
   // Load fitting centres the first time the details form is shown.
   useEffect(() => {
     if (stage !== "details" || centres !== null) return;
     apiGet("/service-centres")
-      .then((list) => setCentres(Array.isArray(list) ? list : []))
-      .catch(() => setCentres([]));
+      .then((list) => {
+        setCentres(Array.isArray(list) ? list : []);
+        setCentresFailed(false);
+      })
+      .catch(() => {
+        setCentres([]);
+        setCentresFailed(true);
+      });
   }, [stage, centres]);
+
+  // If that failed because the backend was asleep, try once more when it's awake.
+  useEffect(() => {
+    if (backendStatus === "ready" && centresFailed) {
+      setCentresFailed(false);
+      setCentres(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendStatus]);
 
   // Start over at the cart view after a completed order once the drawer closes.
   useEffect(() => {
@@ -166,7 +184,7 @@ export default function CartDrawer() {
         referralCode: form.referralCode.trim() || undefined,
         website: form.website, // honeypot: always empty for real users
         items: items.map((i) => (i.availability === "found_online" ? webItem(i) : { productId: i.product.id, quantity: i.qty })),
-      });
+      }, { timeoutMs: SLOW_TIMEOUT_MS }); // the backend may still be waking up
       setOrder({ ...res, unconfirmed: unconfirmedCount });
       clear();
       setForm((f) => ({ ...emptyForm(), referralCode: f.referralCode }));
@@ -184,6 +202,7 @@ export default function CartDrawer() {
         setErrors(fieldErrors);
         setFormError(other.join(" ") || (Object.keys(fieldErrors).length ? "" : err.message));
       } else if (isOffline(err)) {
+        reportBackendDown();
         setFormError("We couldn't reach our order system, so we've opened WhatsApp with your order instead.");
         whatsappFallback();
       } else {
@@ -373,7 +392,7 @@ export default function CartDrawer() {
                 disabled={submitting || items.length === 0}
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500 px-6 py-3 font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
               >
-                {submitting ? "Placing order…" : "Place order"}
+                {submitting ? (slow ? "Placing your order… this can take a moment" : "Placing order…") : "Place order"}
               </button>
               <p className="mt-3 text-center text-xs text-slate-400">
                 By placing an order you agree to our{" "}

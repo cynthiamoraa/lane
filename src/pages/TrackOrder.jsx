@@ -70,7 +70,7 @@ export default function TrackOrder() {
   const { reference: rawRef } = useParams();
   const reference = (rawRef || "").toUpperCase();
   usePageTitle(`Track order ${reference} | Lane`);
-  const { waLink } = useSiteData();
+  const { waLink, backendStatus } = useSiteData();
 
   const [order, setOrder] = useState(null);
   const [state, setState] = useState("loading"); // loading | ready | notfound | error
@@ -92,6 +92,12 @@ export default function TrackOrder() {
       return true;
     }
   }, [reference]);
+
+  // If the first load failed while the backend was asleep, load again as soon as it's awake.
+  useEffect(() => {
+    if (backendStatus === "ready" && state === "error") load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendStatus]);
 
   useEffect(() => {
     let timer;
@@ -145,7 +151,14 @@ export default function TrackOrder() {
           </div>
         )}
 
-        {state === "error" && (
+        {state === "error" && backendStatus === "waking" && (
+          <div role="status" className="mt-8 flex items-center gap-3 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
+            <span className="h-3 w-3 shrink-0 animate-pulse rounded-full bg-amber-500" />
+            <p>Lane is starting up, this can take up to a minute. Your order will appear here automatically.</p>
+          </div>
+        )}
+
+        {state === "error" && backendStatus !== "waking" && (
           <div className="mt-8 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
             <p className="font-semibold">We couldn't load your order right now.</p>
             <p className="mt-1 text-sm">Please try again in a moment, or ask us on WhatsApp.</p>
