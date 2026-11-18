@@ -241,9 +241,13 @@ export default function Hero({ pendingQuery }) {
                   >
                     {m.content}
                     {m.count > 0 && (
-                      <p className="mt-2 text-xs font-semibold text-brand-700">
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById("inventory")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                        className="mt-2 block text-left text-xs font-semibold text-brand-700 hover:text-brand-800 hover:underline"
+                      >
                         Matching Inventory ({m.count} {m.count > 1 ? "items" : "item"}) →
-                      </p>
+                      </button>
                     )}
                   </div>
                   {m.offline && <p className="mt-1 px-1 text-[11px] text-slate-400">Offline mode: showing basic matches.</p>}
@@ -294,7 +298,7 @@ export default function Hero({ pendingQuery }) {
           </div>
 
           {/* Recommendation + Inventory */}
-          <div id="inventory" className="rounded-3xl border border-slate-200 bg-slate-50/60 p-5 lg:col-span-3">
+          <div id="inventory" className="scroll-mt-24 rounded-3xl border border-slate-200 bg-slate-50/60 p-5 lg:col-span-3">
             {best && (
               <>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
