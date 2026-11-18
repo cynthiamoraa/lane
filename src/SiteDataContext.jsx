@@ -47,7 +47,10 @@ export function SiteDataProvider({ children }) {
     const ok = (r, check = Array.isArray) => r.status === "fulfilled" && check(r.value);
 
     setData((prev) => ({
-      site: ok(site, (v) => v && typeof v === "object") ? { ...prev.site, ...site.value } : prev.site,
+      // Drop null fields so unset API values don't wipe out the local fallbacks.
+      site: ok(site, (v) => v && typeof v === "object")
+        ? { ...prev.site, ...Object.fromEntries(Object.entries(site.value).filter(([, v]) => v != null)) }
+        : prev.site,
       brands: ok(brands) && brands.value.length ? brands.value.map(toBrand) : prev.brands,
       categories: ok(categories) && categories.value.length ? categories.value : prev.categories,
       faqs: ok(faqs) && faqs.value.length ? faqs.value.map(toFaq) : prev.faqs,

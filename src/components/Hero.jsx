@@ -31,8 +31,8 @@ function toApiHistory(messages) {
 
 // Highlight the last three words of the heading in the brand gradient,
 // e.g. "The Smartest Way To Buy" + "Tyres & Oils."
-function splitHeading(text = "") {
-  const words = text.trim().split(/\s+/);
+function splitHeading(text) {
+  const words = String(text ?? "").trim().split(/\s+/);
   if (words.length <= 3) return { lead: "", accent: words.join(" ") };
   return { lead: words.slice(0, -3).join(" "), accent: words.slice(-3).join(" ") };
 }
