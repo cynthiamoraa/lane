@@ -1,0 +1,10 @@
+node_modules
+dist
+
+# Local environment files (may hold secrets); keep the example committed
+.env
+.env.*
+!.env.example
+
+# Working prompt notes (not part of the project)
+lane-*-prompt.md
